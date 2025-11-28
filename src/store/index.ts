@@ -328,6 +328,7 @@ export const evalSessionStore = {
           createdAt: new Date(session.createdAt),
           updatedAt: new Date(session.updatedAt),
           chatCards: session.chatCards || [],
+          chatSessionIds: session.chatSessionIds || [],
         } as EvalSession;
       }
       return null;
@@ -351,6 +352,7 @@ export const evalSessionStore = {
             createdAt: new Date(session.createdAt),
             updatedAt: new Date(session.updatedAt),
             chatCards: session.chatCards || [],
+            chatSessionIds: session.chatSessionIds || [],
           } as EvalSession);
         }
       }
@@ -359,6 +361,31 @@ export const evalSessionStore = {
     } catch (error) {
       console.error("Failed to load all sessions:", error);
       return [];
+    }
+  },
+
+  // Rename an evaluation session
+  async renameSession(sessionId: string, newName: string): Promise<boolean> {
+    try {
+      const existingSession = (await evalStore.getItem(sessionId)) as
+        | any
+        | null;
+      if (!existingSession) {
+        console.error(`Session with ID ${sessionId} not found`);
+        return false;
+      }
+
+      const updatedSession = {
+        ...existingSession,
+        name: newName,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await evalStore.setItem(sessionId, updatedSession);
+      return true;
+    } catch (error) {
+      console.error(`Failed to rename session ${sessionId}:`, error);
+      return false;
     }
   },
 

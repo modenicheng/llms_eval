@@ -244,15 +244,15 @@ watch(
           @keydown="handleKeydown"
         ></v-textarea>
         <v-btn
+          prepend-icon="mdi-send"
           color="primary"
           @click="sendGlobalPrompt"
-          :disabled="!globalPrompt.trim()"
+          :disabled="!globalPrompt.trim() || chatCards.length === 0"
           class="mt-2"
         >
           发送
         </v-btn>
-        <v-btn class="mt-2 ml-2" color="primary" @click="addChatCard">
-          <v-icon icon="mdi-plus"></v-icon>
+        <v-btn prepend-icon="mdi-plus" class="mt-2 ml-2" color="primary" @click="addChatCard">
           添加模型
         </v-btn>
       </v-card-text>
@@ -271,6 +271,7 @@ watch(
         <ChatCard
           :userPrompt="card.userPrompt"
           :chatSessionId="card.config.chatSessionId"
+          :modelConfig="card.config"
           :onDelete="() => deleteChatCard(card.id)"
           :onModelSelect="
             (platform: string, model: string) => updateChatCardConfig(card.id, platform, model)

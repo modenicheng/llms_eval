@@ -2,6 +2,11 @@ const routes = [
   {
     path: "/",
     redirect: "/chat",
+    meta: {
+      title: "Chat",
+      visible: true,
+      icon: "mdi-message-text",
+    },
   },
   {
     path: "/chat/:sessionId?",
@@ -9,6 +14,8 @@ const routes = [
     component: () => import("../views/Chat.vue"),
     meta: {
       title: "Chat",
+      visible: false,
+      icon: "mdi-message-text",
     },
   },
   {
@@ -17,6 +24,8 @@ const routes = [
     component: () => import("../views/Config.vue"),
     meta: {
       title: "Config",
+      visible: true,
+      icon: "mdi-account-cog",
     },
   },
   {
@@ -25,6 +34,8 @@ const routes = [
     component: () => import("../views/History.vue"),
     meta: {
       title: "History",
+      visible: true,
+      icon: "mdi-history",
     },
   },
 ];

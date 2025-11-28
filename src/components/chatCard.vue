@@ -38,6 +38,11 @@ const props = defineProps({
     type: String,
     default: "",
   },
+  // 新增：父组件主动设置的模型配置
+  modelConfig: {
+    type: Object as () => { platform: string; model: string },
+    default: () => ({ platform: "", model: "" }),
+  },
 });
 
 const emit = defineEmits<{
@@ -66,19 +71,21 @@ const messages = computed(() => {
 });
 
 // 核心方法
-const loadPlatformConfigs = async () => {
+const loadPlatformConfigs = async (autoSelectDefault = true) => {
   try {
     const configs = await platformConfigStore.getAllConfigs();
     state.value.platformConfigs = configs;
 
-    // 默认选择第一个可用的平台和模型
-    const platforms = Object.keys(configs);
-    if (platforms[0]) {
-      state.value.selectedPlatform = platforms[0];
-      const firstModel = configs[platforms[0]]?.models?.[0];
-      if (firstModel) {
-        state.value.selectedModel = firstModel.value;
-        handleModelSelect();
+    // 只有在需要时才自动选择默认值
+    if (autoSelectDefault) {
+      const platforms = Object.keys(configs);
+      if (platforms[0]) {
+        state.value.selectedPlatform = platforms[0];
+        const firstModel = configs[platforms[0]]?.models?.[0];
+        if (firstModel) {
+          state.value.selectedModel = firstModel.value;
+          handleModelSelect();
+        }
       }
     }
   } catch (error) {
@@ -271,17 +278,18 @@ const selectModel = (platform: string, model: string) => {
 };
 
 // 滚动到底部
+const chatMessagesRef = ref<HTMLDivElement | null>(null);
+
 const scrollToBottom = () => {
   nextTick(() => {
-    const chatMessagesRef = document.getElementById("chatMessagesRef");
     if (
-      chatMessagesRef &&
-      chatMessagesRef.scrollHeight -
-        chatMessagesRef.scrollTop -
-        chatMessagesRef?.clientHeight <
-        50
+      chatMessagesRef.value &&
+      chatMessagesRef.value.scrollHeight -
+        chatMessagesRef.value.scrollTop -
+        chatMessagesRef.value?.clientHeight <
+        150
     ) {
-      chatMessagesRef.scrollTop = chatMessagesRef.scrollHeight;
+      chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
     }
   });
 };
@@ -305,9 +313,25 @@ watch(
   }
 );
 
+// 监听父组件传递的模型配置变化
+watch(
+  () => props.modelConfig,
+  (newConfig) => {
+    if (newConfig.platform && newConfig.model) {
+      // 只有当配置有效时才更新
+      state.value.selectedPlatform = newConfig.platform;
+      state.value.selectedModel = newConfig.model;
+      // 触发模型选择事件
+      handleModelSelect();
+    }
+  },
+  { deep: true }
+);
+
 // 组件挂载
 onMounted(async () => {
-  await loadPlatformConfigs();
+  // 先加载平台配置，但不自动选择默认值
+  await loadPlatformConfigs(false);
   if (props.chatSessionId) {
     await loadChatSession();
   }
@@ -364,63 +388,76 @@ onMounted(async () => {
     <v-divider></v-divider>
 
     <!-- 聊天消息区域 -->
-    <v-card-text
-      ref="chatMessagesRef"
-      id="chatMessagesRef"
-      class="chat-messages"
-      style="height: 30rem; overflow-y: auto"
-    >
+    <v-card-text>
       <div
-        v-for="(message, _index) in messages"
-        :key="message.id"
-        :class="[
-          'message-bubble',
-          message.role === 'user' ? 'user-message' : '',
-        ]"
+        ref="chatMessagesRef"
+        id="chatMessagesRef"
+        class="chat-messages"
+        style="height: 30rem; overflow-y: auto"
       >
-        <!-- 推理内容显示 -->
         <div
-          v-if="message.role === 'assistant' && hasReasoningContent(message)"
-          class="reasoning-section"
+          v-if="messages.length === 0"
+          class="d-flex flex-column justify-center align-center ga-4"
         >
+          <v-icon
+            icon="mdi-message-outline"
+            :size="60"
+            class="opacity-70"
+          ></v-icon>
+          <div class="text-center opacity-80">暂无对话</div>
+        </div>
+        <div
+          v-for="(message, _index) in messages"
+          :key="message.id"
+          :class="[
+            'message-bubble',
+            message.role === 'user' ? 'user-message' : 'assistant-message',
+          ]"
+        >
+          <!-- 推理内容显示 -->
           <div
-            class="reasoning-preview"
-            :class="{ expanded: isReasoningExpanded(message.id) }"
-            @click="toggleReasoning(message.id)"
+            v-if="message.role === 'assistant' && hasReasoningContent(message)"
+            class="reasoning-section"
           >
-            <div class="reasoning-header">
-              <span class="reasoning-label">思考过程</span>
-              <v-icon size="small">
-                {{
-                  isReasoningExpanded(message.id)
-                    ? "mdi-chevron-up"
-                    : "mdi-chevron-down"
-                }}
-              </v-icon>
-            </div>
             <div
-              class="reasoning-content"
+              class="reasoning-preview"
               :class="{ expanded: isReasoningExpanded(message.id) }"
+              @click="toggleReasoning(message.id)"
             >
+              <div class="reasoning-header">
+                <span class="reasoning-label">思考过程</span>
+                <v-icon size="small">
+                  {{
+                    isReasoningExpanded(message.id)
+                      ? "mdi-chevron-up"
+                      : "mdi-chevron-down"
+                  }}
+                </v-icon>
+              </div>
               <div
-                v-if="isReasoningExpanded(message.id)"
-                v-html="md.render(message.reasoningContent || '')"
-              ></div>
+                class="reasoning-content"
+                :class="{ expanded: isReasoningExpanded(message.id) }"
+              >
+                <div
+                  v-if="isReasoningExpanded(message.id)"
+                  v-html="md.render(message.reasoningContent || '')"
+                ></div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <!-- 主要消息内容 -->
-        <div
-          class="message-content"
-          v-html="
-            message.role === 'assistant'
-              ? md.render(message.content)
-              : message.content
-          "
-        ></div>
-        <div class="message-time" v-if="message.role == 'assistant'">
-          {{ new Date(message.timestamp).toLocaleTimeString() }}
+          <!-- 主要消息内容 -->
+          <div
+            class="message-content"
+            v-html="
+              message.role === 'assistant'
+                ? md.render(message.content)
+                : message.content
+            "
+          ></div>
+          <div class="message-time" v-if="message.role == 'assistant'">
+            {{ new Date(message.timestamp).toLocaleTimeString() }}
+          </div>
         </div>
       </div>
     </v-card-text>
@@ -440,9 +477,15 @@ onMounted(async () => {
 }
 
 .user-message {
-  background-color: #e0e0e0;
+  background-color: #e3f2fd;
   margin-left: auto;
   text-align: right;
+}
+
+.assistant-message {
+  padding: 0;
+  margin-right: auto;
+  text-align: left;
 }
 
 .message-content {
@@ -499,24 +542,15 @@ onMounted(async () => {
 
 .reasoning-content {
   padding: 0 12px;
-  max-height: 0;
-  overflow: hidden;
+  max-height: auto;
+  overflow: auto;
   transition: max-height 0.3s ease;
 }
 
 .reasoning-content.expanded {
-  max-height: 500px;
+  /* max-height: 500px; */
   padding: 8px 12px;
   border-top: 1px solid #e0e0e0;
-}
-
-.reasoning-preview-text {
-  font-size: 0.875rem;
-  color: #5f6368;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.4;
 }
 </style>
 

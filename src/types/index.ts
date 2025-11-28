@@ -61,6 +61,18 @@ type ChatCardConfig = {
   chatSessionId?: string; // 当前关联的聊天会话ID
 };
 
+interface RouteMeta {
+  title?: string;
+  visible?: boolean;
+  icon?: string;
+}
+
+interface RouteItem {
+  path: string;
+  name?: string;
+  meta: RouteMeta;
+}
+
 export type {
   PlatformConfig,
   Models,
@@ -69,4 +81,6 @@ export type {
   ChatSession,
   ChatMessage,
   UsageStats,
+  RouteMeta,
+  RouteItem,
 };

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from "vue";
+import { ref, onMounted, computed, onUnmounted } from "vue";
 import { useRouter } from "vue-router";
 import { evalSessionStore, chatSessionStore } from "../store";
 import type { EvalSession, ChatSession, ChatMessage } from "../types";
@@ -23,6 +23,16 @@ const isLoading = ref(false);
 const expandedSessions = ref<Set<string>>(new Set());
 const expandedReasoningIds = ref<Set<string>>(new Set());
 
+// 对话框状态
+const deleteDialog = ref(false);
+const deleteSessionId = ref<string | null>(null);
+const renameDialog = ref(false);
+const renameSessionId = ref<string | null>(null);
+const newSessionName = ref("");
+const snackbar = ref(false);
+const snackbarMessage = ref("");
+const snackbarColor = ref("error");
+
 // 计算属性
 const hasSelectedSession = computed(() => selectedSession.value !== null);
 const totalMessages = computed(() => {
@@ -30,7 +40,6 @@ const totalMessages = computed(() => {
     return total + session.messages.length;
   }, 0);
 });
-
 
 // 加载评测会话列表
 const loadEvalSessions = async () => {
@@ -82,7 +91,6 @@ const toggleSessionExpansion = (sessionId: string) => {
     expandedSessions.value.add(sessionId);
   }
 };
-
 
 // 切换推理内容的展开/折叠
 const toggleReasoning = (messageId: string) => {
@@ -170,37 +178,126 @@ const exportToCSV = () => {
   document.body.removeChild(link);
 };
 
-// 删除评测会话
-const deleteSession = async (sessionId: string, event?: Event) => {
+// 打开删除确认对话框
+const openDeleteDialog = (sessionId: string, event?: Event) => {
   if (event) {
     event.stopPropagation();
   }
+  deleteSessionId.value = sessionId;
+  deleteDialog.value = true;
+};
 
-  if (confirm("确定要删除这个评测会话吗？此操作不可恢复。")) {
-    try {
-      // 先删除关联的聊天会话
-      const chatSessionsToDelete =
-        await chatSessionStore.getSessionsByEvalSession(sessionId);
-      for (const chatSession of chatSessionsToDelete) {
-        await chatSessionStore.deleteSession(chatSession.id);
-      }
+// 确认删除评测会话
+const confirmDelete = async () => {
+  if (!deleteSessionId.value) return;
 
-      // 删除评测会话
-      await evalSessionStore.deleteSession(sessionId);
-
-      // 如果删除的是当前选中的会话，清除选中状态
-      if (selectedSession.value && selectedSession.value.id === sessionId) {
-        selectedSession.value = null;
-        chatSessions.value = [];
-      }
-
-      // 重新加载会话列表
-      await loadEvalSessions();
-    } catch (error) {
-      console.error("Failed to delete session:", error);
-      alert("删除失败，请重试");
+  try {
+    // 先删除关联的聊天会话
+    const chatSessionsToDelete =
+      await chatSessionStore.getSessionsByEvalSession(deleteSessionId.value);
+    for (const chatSession of chatSessionsToDelete) {
+      await chatSessionStore.deleteSession(chatSession.id);
     }
+
+    // 删除评测会话
+    await evalSessionStore.deleteSession(deleteSessionId.value);
+
+    // 如果删除的是当前选中的会话，清除选中状态
+    if (
+      selectedSession.value &&
+      selectedSession.value.id === deleteSessionId.value
+    ) {
+      selectedSession.value = null;
+      chatSessions.value = [];
+    }
+
+    // 重新加载会话列表
+    await loadEvalSessions();
+
+    // 关闭对话框
+    deleteDialog.value = false;
+    deleteSessionId.value = null;
+  } catch (error) {
+    console.error("Failed to delete session:", error);
+    snackbarMessage.value = "删除失败，请重试";
+    snackbarColor.value = "error";
+    snackbar.value = true;
   }
+};
+
+// 取消删除
+const cancelDelete = () => {
+  deleteDialog.value = false;
+  deleteSessionId.value = null;
+};
+
+// 打开重命名对话框
+const openRenameDialog = (sessionId: string, event?: Event) => {
+  if (event) {
+    event.stopPropagation();
+  }
+  const session = evalSessions.value.find((s) => s.id === sessionId);
+  if (session) {
+    renameSessionId.value = sessionId;
+    newSessionName.value = session.name;
+    renameDialog.value = true;
+  }
+};
+
+// 确认重命名评测会话
+const confirmRename = async () => {
+  if (!renameSessionId.value || !newSessionName.value.trim()) return;
+
+  try {
+    const success = await evalSessionStore.renameSession(
+      renameSessionId.value,
+      newSessionName.value.trim()
+    );
+
+    if (success) {
+      // 更新本地状态
+      const sessionIndex = evalSessions.value.findIndex(
+        (s) => s.id === renameSessionId.value
+      );
+      if (sessionIndex !== -1 && evalSessions.value[sessionIndex]) {
+        evalSessions.value[sessionIndex].name = newSessionName.value.trim();
+        evalSessions.value[sessionIndex].updatedAt = new Date();
+      }
+
+      // 如果重命名的是当前选中的会话，更新选中状态
+      if (
+        selectedSession.value &&
+        selectedSession.value.id === renameSessionId.value
+      ) {
+        selectedSession.value.name = newSessionName.value.trim();
+        selectedSession.value.updatedAt = new Date();
+      }
+
+      // 关闭对话框
+      renameDialog.value = false;
+      renameSessionId.value = null;
+      newSessionName.value = "";
+
+      // 显示成功消息
+      snackbarMessage.value = "重命名成功";
+      snackbarColor.value = "success";
+      snackbar.value = true;
+    } else {
+      throw new Error("重命名失败");
+    }
+  } catch (error) {
+    console.error("Failed to rename session:", error);
+    snackbarMessage.value = "重命名失败，请重试";
+    snackbarColor.value = "error";
+    snackbar.value = true;
+  }
+};
+
+// 取消重命名
+const cancelRename = () => {
+  renameDialog.value = false;
+  renameSessionId.value = null;
+  newSessionName.value = "";
 };
 
 // 恢复会话到聊天界面
@@ -213,9 +310,25 @@ const formatDate = (date: Date) => {
   return new Date(date).toLocaleString("zh-CN");
 };
 
+// 键盘事件处理
+const handleKeydown = (event: KeyboardEvent) => {
+  if (deleteDialog.value && event.key === "Enter") {
+    event.preventDefault();
+    confirmDelete();
+  }
+};
+
 // 组件挂载
 onMounted(() => {
   loadEvalSessions();
+  // 添加全局键盘事件监听
+  document.addEventListener("keydown", handleKeydown);
+});
+
+// 组件卸载
+onUnmounted(() => {
+  // 移除全局键盘事件监听
+  document.removeEventListener("keydown", handleKeydown);
 });
 </script>
 
@@ -261,15 +374,27 @@ onMounted(() => {
                 </v-list-item-subtitle>
 
                 <template v-slot:append>
-                  <v-btn
-                    icon
-                    size="small"
-                    variant="text"
-                    color="error"
-                    @click="deleteSession(session.id, $event)"
-                  >
-                    <v-icon>mdi-delete</v-icon>
-                  </v-btn>
+                  <div class="d-flex align-center">
+                    <v-btn
+                      icon
+                      size="small"
+                      variant="text"
+                      color="primary"
+                      @click="openRenameDialog(session.id, $event)"
+                      class="mr-1"
+                    >
+                      <v-icon>mdi-pencil</v-icon>
+                    </v-btn>
+                    <v-btn
+                      icon
+                      size="small"
+                      variant="text"
+                      color="error"
+                      @click="openDeleteDialog(session.id, $event)"
+                    >
+                      <v-icon>mdi-delete</v-icon>
+                    </v-btn>
+                  </div>
                 </template>
               </v-list-item>
 
@@ -474,6 +599,64 @@ onMounted(() => {
         </v-card>
       </v-col>
     </v-row>
+
+    <!-- 删除确认对话框 -->
+    <v-dialog v-model="deleteDialog" max-width="500">
+      <template v-slot:default="{ isActive }">
+        <v-card title="确认删除" prepend-icon="mdi-alert-circle">
+          <v-card-text>
+            确定要删除这个评测会话吗？此操作不可恢复，所有相关的聊天记录也将被删除。
+          </v-card-text>
+
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn variant="text" @click="cancelDelete">取消</v-btn>
+            <v-btn color="error" variant="tonal" @click="confirmDelete">
+              确认删除
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </template>
+    </v-dialog>
+
+    <!-- 重命名对话框 -->
+    <v-dialog v-model="renameDialog" max-width="500">
+      <template v-slot:default="{ isActive }">
+        <v-card title="重命名评测会话" prepend-icon="mdi-pencil">
+          <v-card-text>
+            <v-text-field
+              v-model="newSessionName"
+              label="会话名称"
+              placeholder="请输入新的会话名称"
+              variant="outlined"
+              @keydown.enter="confirmRename"
+              autofocus
+            ></v-text-field>
+          </v-card-text>
+
+          <v-card-actions>
+            <v-spacer></v-spacer>
+            <v-btn variant="text" @click="cancelRename">取消</v-btn>
+            <v-btn
+              color="primary"
+              variant="tonal"
+              @click="confirmRename"
+              :disabled="!newSessionName.trim()"
+            >
+              确认重命名
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </template>
+    </v-dialog>
+
+    <!-- 消息提示 -->
+    <v-snackbar v-model="snackbar" :color="snackbarColor" timeout="3000">
+      {{ snackbarMessage }}
+      <template v-slot:actions>
+        <v-btn variant="text" @click="snackbar = false"> 关闭 </v-btn>
+      </template>
+    </v-snackbar>
   </v-container>
 </template>
 

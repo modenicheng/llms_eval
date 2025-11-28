@@ -23,7 +23,7 @@ const MODEL_TYPES = {
         label: "豆包 Seed 1.6 Thinking",
       },
       { value: "doubao-seed-1-6-vision-250815", label: "豆包 Seed 1.6 Vision" },
-      { value: "deepseek-v3-1-terminus", label: "DeepSeek V3.1 Terminus" },
+      // { value: "deepseek-v3-1-terminus", label: "DeepSeek V3.1 Terminus" },
     ],
   },
   tongyi: {
@@ -31,23 +31,23 @@ const MODEL_TYPES = {
     defaultUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
     models: [
       // Qwen3 系列模型
-      { value: "qwen3", label: "通义千问 3" },
+      // { value: "qwen3", label: "通义千问 3" },
       { value: "qwen3-12b", label: "通义千问 3 12B" },
       { value: "qwen3-72b", label: "通义千问 3 72B" },
       { value: "qwen3-plus", label: "通义千问 3 Plus" },
       { value: "qwen3-max", label: "通义千问 3 Max" },
       { value: "qwen3-turbo", label: "通义千问 3 Turbo" },
-      { value: "qwen3-code", label: "通义千问 3 代码" },
-      { value: "qwen3-math", label: "通义千问 3 数学" },
-      { value: "qwen3-reasoning", label: "通义千问 3 推理" },
+      // { value: "qwen3-code", label: "通义千问 3 代码" },
+      // { value: "qwen3-math", label: "通义千问 3 数学" },
+      // { value: "qwen3-reasoning", label: "通义千问 3 推理" },
       { value: "qwen3-longcontext", label: "通义千问 3 长上下文" },
 
       // Qwen3 多模态模型
-      { value: "qwen3-vl", label: "通义千问 3 视觉" },
-      { value: "qwen3-vl-plus", label: "通义千问 3 视觉 Plus" },
-      { value: "qwen3-vl-max", label: "通义千问 3 视觉 Max" },
-      { value: "qwen3-audio", label: "通义千问 3 音频" },
-      { value: "qwen3-video", label: "通义千问 3 视频" },
+      // { value: "qwen3-vl", label: "通义千问 3 视觉" },
+      // { value: "qwen3-vl-plus", label: "通义千问 3 视觉 Plus" },
+      // { value: "qwen3-vl-max", label: "通义千问 3 视觉 Max" },
+      // { value: "qwen3-audio", label: "通义千问 3 音频" },
+      // { value: "qwen3-video", label: "通义千问 3 视频" },
 
       // 文本生成模型
       { value: "qwen-plus", label: "通义千问 Plus" },
