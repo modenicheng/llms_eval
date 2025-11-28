@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import ChatCard from "../components/chatCard.vue";
 import { evalSessionStore, chatSessionStore } from "../store";
+
 import type { EvalSession, ChatCardConfig } from "../types";
+
+// 路由
+const route = useRoute();
 
 // 当前评测会话
 const currentSession = ref<EvalSession | null>(null);
@@ -111,9 +116,10 @@ const deleteChatCard = async (cardId: string) => {
   currentSession.value.chatCards = currentSession.value.chatCards.filter(
     (card) => card.id !== cardId
   );
-  currentSession.value.chatSessionIds = currentSession.value.chatSessionIds.filter(
-    (sessionId) => sessionId !== cardConfig?.chatSessionId
-  );
+  currentSession.value.chatSessionIds =
+    currentSession.value.chatSessionIds.filter(
+      (sessionId) => sessionId !== cardConfig?.chatSessionId
+    );
 
   // 从本地状态中移除
   chatCards.value = chatCards.value.filter((card) => card.id !== cardId);
@@ -199,9 +205,16 @@ const handleModelSelect = (platform: string, model: string) => {
   console.log(`选择了服务商: ${platform}, 模型: ${model}`);
 };
 
-// 组件挂载时创建新会话
+// 组件挂载时根据路由参数加载会话
 onMounted(async () => {
-  await createNewSession();
+  const sessionId = route.params.sessionId as string;
+  if (sessionId) {
+    // 如果路由中有sessionId参数，则加载该会话
+    await loadSession(sessionId);
+  } else {
+    // 否则创建新会话
+    await createNewSession();
+  }
 });
 
 // 监听会话变化，自动保存
@@ -239,6 +252,7 @@ watch(
           发送
         </v-btn>
         <v-btn class="mt-2 ml-2" color="primary" @click="addChatCard">
+          <v-icon icon="mdi-plus"></v-icon>
           添加模型
         </v-btn>
       </v-card-text>

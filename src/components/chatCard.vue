@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch, nextTick } from "vue";
 import { platformConfigStore, chatSessionStore } from "../store";
 import { chatService } from "../services/chatService";
 import type { PlatformConfig, ChatSession, ChatMessage } from "../types";
 import MarkdownIt from "markdown-it";
+
+// 展开的推理消息ID
+const expandedReasoningIds = ref<Set<string>>(new Set());
+
+// 聊天消息容器引用
 
 // 创建 markdown 渲染器实例
 const md = new MarkdownIt({
@@ -56,16 +61,8 @@ const selectedPlatformConfig = computed(() => {
     : null;
 });
 
-const availableModels = computed(() => {
-  return selectedPlatformConfig.value?.models || [];
-});
-
 const messages = computed(() => {
   return state.value.currentChatSession?.messages || [];
-});
-
-const usageStats = computed(() => {
-  return state.value.currentChatSession?.usage || null;
 });
 
 // 核心方法
@@ -106,19 +103,6 @@ const loadChatSession = async () => {
   } catch (error) {
     console.error("Failed to load chat session:", error);
   }
-};
-
-const handlePlatformChange = () => {
-  state.value.selectedModel = "";
-  const firstModel = availableModels.value[0];
-  if (firstModel) {
-    state.value.selectedModel = firstModel.value;
-  }
-  handleModelSelect();
-};
-
-const handleModelChange = () => {
-  handleModelSelect();
 };
 
 const handleModelSelect = () => {
@@ -201,15 +185,24 @@ const sendMessage = async (message: string) => {
       selectedPlatformConfig.value!,
       selectedModel,
       openAIMessages,
-      (chunk) => {
+      (chunk, reasoningChunk) => {
         // 直接更新当前会话中的AI消息内容
         if (state.value.currentChatSession) {
           const messages = [...state.value.currentChatSession.messages];
           const lastMessage = messages[messages.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
-            lastMessage.content += chunk;
+            // 更新内容或推理内容
+            if (chunk) {
+              lastMessage.content += chunk;
+            }
+            if (reasoningChunk) {
+              lastMessage.reasoningContent =
+                (lastMessage.reasoningContent || "") + reasoningChunk;
+            }
             // 触发响应式更新
             state.value.currentChatSession.messages = [...messages];
+            // 在流式输出时滚动到底部
+            scrollToBottom();
           }
         }
       }
@@ -251,6 +244,48 @@ const handleDelete = () => {
   props.onDelete();
 };
 
+// 切换推理内容的展开/折叠
+const toggleReasoning = (messageId: string) => {
+  if (expandedReasoningIds.value.has(messageId)) {
+    expandedReasoningIds.value.delete(messageId);
+  } else {
+    expandedReasoningIds.value.add(messageId);
+  }
+};
+
+// 检查消息是否包含推理内容
+const hasReasoningContent = (message: ChatMessage) => {
+  return message.reasoningContent && message.reasoningContent.trim().length > 0;
+};
+
+// 检查推理内容是否已展开
+const isReasoningExpanded = (messageId: string) => {
+  return expandedReasoningIds.value.has(messageId);
+};
+
+// 选择模型的方法
+const selectModel = (platform: string, model: string) => {
+  state.value.selectedPlatform = platform;
+  state.value.selectedModel = model;
+  handleModelSelect();
+};
+
+// 滚动到底部
+const scrollToBottom = () => {
+  nextTick(() => {
+    const chatMessagesRef = document.getElementById("chatMessagesRef");
+    if (
+      chatMessagesRef &&
+      chatMessagesRef.scrollHeight -
+        chatMessagesRef.scrollTop -
+        chatMessagesRef?.clientHeight <
+        50
+    ) {
+      chatMessagesRef.scrollTop = chatMessagesRef.scrollHeight;
+    }
+  });
+};
+
 // 监听器
 watch(
   () => props.userPrompt,
@@ -283,7 +318,44 @@ onMounted(async () => {
   <v-card elevation="2" :loading="state.isLoading">
     <!-- 卡片头部 -->
     <v-card-title class="d-flex justify-space-between align-center">
-      <span>{{ selectedPlatformConfig?.platform || "未选择服务商" }}</span>
+      <v-btn color="primary" variant="outlined" size="small">
+        {{ state.selectedModel || "选择模型" }}
+        <v-menu activator="parent">
+          <v-list>
+            <v-list-item
+              v-for="platform in Object.keys(state.platformConfigs)"
+              :key="platform"
+              link
+              :active="state.selectedPlatform === platform"
+            >
+              <v-list-item-title>{{ platform }}</v-list-item-title>
+              <template v-slot:append>
+                <v-icon icon="mdi-menu-right" size="x-small"></v-icon>
+              </template>
+
+              <v-menu
+                :open-on-focus="false"
+                activator="parent"
+                open-on-hover
+                submenu
+              >
+                <v-list>
+                  <v-list-item
+                    v-for="model in state.platformConfigs[platform]?.models ||
+                    []"
+                    :key="model.value"
+                    link
+                    :active="state.selectedModel === model.value"
+                    @click="selectModel(platform, model.value)"
+                  >
+                    <v-list-item-title>{{ model.label }}</v-list-item-title>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
+            </v-list-item>
+          </v-list>
+        </v-menu>
+      </v-btn>
       <v-btn color="error" variant="text" size="small" @click="handleDelete">
         移除
       </v-btn>
@@ -291,38 +363,13 @@ onMounted(async () => {
 
     <v-divider></v-divider>
 
-    <!-- 服务商和模型选择 -->
-    <v-card-text class="pb-0">
-      <v-select
-        v-model="state.selectedPlatform"
-        :items="
-          Object.keys(state.platformConfigs).map((key) => ({
-            title: key,
-            value: key,
-          }))
-        "
-        item-title="title"
-        item-value="value"
-        label="选择服务商"
-        density="compact"
-        variant="outlined"
-        @update:model-value="handlePlatformChange"
-      ></v-select>
-      <v-select
-        v-model="state.selectedModel"
-        :items="availableModels"
-        item-title="label"
-        item-value="value"
-        label="选择模型"
-        density="compact"
-        variant="outlined"
-        :disabled="!state.selectedPlatform"
-        @update:model-value="handleModelChange"
-      ></v-select>
-    </v-card-text>
-
     <!-- 聊天消息区域 -->
-    <v-card-text class="chat-messages" style="height: 30rem; overflow-y: auto">
+    <v-card-text
+      ref="chatMessagesRef"
+      id="chatMessagesRef"
+      class="chat-messages"
+      style="height: 30rem; overflow-y: auto"
+    >
       <div
         v-for="(message, _index) in messages"
         :key="message.id"
@@ -331,6 +378,39 @@ onMounted(async () => {
           message.role === 'user' ? 'user-message' : '',
         ]"
       >
+        <!-- 推理内容显示 -->
+        <div
+          v-if="message.role === 'assistant' && hasReasoningContent(message)"
+          class="reasoning-section"
+        >
+          <div
+            class="reasoning-preview"
+            :class="{ expanded: isReasoningExpanded(message.id) }"
+            @click="toggleReasoning(message.id)"
+          >
+            <div class="reasoning-header">
+              <span class="reasoning-label">思考过程</span>
+              <v-icon size="small">
+                {{
+                  isReasoningExpanded(message.id)
+                    ? "mdi-chevron-up"
+                    : "mdi-chevron-down"
+                }}
+              </v-icon>
+            </div>
+            <div
+              class="reasoning-content"
+              :class="{ expanded: isReasoningExpanded(message.id) }"
+            >
+              <div
+                v-if="isReasoningExpanded(message.id)"
+                v-html="md.render(message.reasoningContent || '')"
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 主要消息内容 -->
         <div
           class="message-content"
           v-html="
@@ -381,6 +461,62 @@ onMounted(async () => {
   justify-content: center;
   padding: 12px;
   color: #666;
+}
+
+/* 推理内容样式 */
+.reasoning-section {
+  margin-bottom: 8px;
+}
+
+.reasoning-preview {
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  background-color: #f8f9fa;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reasoning-preview:hover {
+  background-color: #f1f3f4;
+}
+
+.reasoning-preview.expanded {
+  background-color: #f1f3f4;
+}
+
+.reasoning-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  color: #5f6368;
+}
+
+.reasoning-label {
+  font-weight: 600;
+}
+
+.reasoning-content {
+  padding: 0 12px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.reasoning-content.expanded {
+  max-height: 500px;
+  padding: 8px 12px;
+  border-top: 1px solid #e0e0e0;
+}
+
+.reasoning-preview-text {
+  font-size: 0.875rem;
+  color: #5f6368;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
 }
 </style>
 

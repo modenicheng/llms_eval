@@ -4,6 +4,7 @@ import type { PlatformConfig } from "../types";
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+  reasoningContent?: string; // 推理内容
   name?: string;
 }
 
@@ -59,7 +60,7 @@ class ChatService {
     platformConfig: PlatformConfig,
     model: string,
     messages: ChatMessage[],
-    onStreamChunk?: (content: string) => void
+    onStreamChunk?: (content: string, reasoningContent?: string) => void
   ): Promise<string> {
     const requestData: ChatCompletionRequest = {
       model,
@@ -115,7 +116,7 @@ class ChatService {
   private async sendStreamRequest(
     platformConfig: PlatformConfig,
     requestData: ChatCompletionRequest,
-    onChunk: (content: string) => void
+    onChunk: (content: string, reasoningContent?: string) => void
   ): Promise<string> {
     const response = await fetch(`${platformConfig.baseURL}/chat/completions`, {
       method: "POST",
@@ -149,10 +150,10 @@ class ChatService {
 
         // 解码当前chunk并添加到缓冲区
         buffer += decoder.decode(value, { stream: true });
-        
+
         // 按行分割缓冲区
         const lines = buffer.split("\n");
-        
+
         // 保留最后一行（可能不完整）
         buffer = lines.pop() || "";
 
@@ -170,14 +171,24 @@ class ChatService {
             try {
               const parsed: StreamChunk = JSON.parse(data);
               const content = parsed.choices[0]?.delta?.content;
+              const reasoningContent =
+                parsed.choices[0]?.delta?.reasoning_content;
 
               if (content) {
                 fullContent += content;
-                onChunk(content);
+                onChunk(content, reasoningContent);
+              } else if (reasoningContent) {
+                // 如果只有推理内容，也调用回调
+                onChunk("", reasoningContent);
               }
             } catch (error) {
               // 忽略解析错误，继续处理其他数据
-              console.warn("Failed to parse stream data:", error, "Data:", data);
+              console.warn(
+                "Failed to parse stream data:",
+                error,
+                "Data:",
+                data
+              );
             }
           }
         }

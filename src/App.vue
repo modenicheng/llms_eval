@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { RouterView } from 'vue-router';
-import routes from './router/routes';
+import { RouterView } from "vue-router";
+import routes from "./router/routes";
 </script>
 
 <template>
@@ -9,8 +9,13 @@ import routes from './router/routes';
 
     <v-navigation-drawer>
       <v-list nav>
-        <v-list-item v-for="route in routes" :key="route.name" :title="route.meta.title" link
-          :to="route.path"></v-list-item>
+        <v-list-item
+          v-for="route in routes"
+          :key="route.name"
+          :title="route.meta?.title"
+          link
+          :to="route.path"
+        ></v-list-item>
       </v-list>
     </v-navigation-drawer>
 

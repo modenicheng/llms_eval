@@ -20,10 +20,12 @@
   },
   "devDependencies": {
     "@mdi/font": "^7.4.47",
+    "@mdi/js": "^7.4.47",
     "@types/markdown-it": "^14.1.2",
     "@types/node": "^24.10.1",
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/tsconfig": "^0.8.1",
+    "material-design-icons-iconfont": "^6.7.0",
     "sass": "^1.94.2",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
