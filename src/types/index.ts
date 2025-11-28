@@ -13,9 +13,11 @@ type Models = {
 // 聊天消息类型
 type ChatMessage = {
   id: string;
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
+  reasoningContent?: string; // 推理内容
   timestamp: Date;
+  tokens?: number;
 };
 
 // 使用量统计类型
@@ -59,4 +61,12 @@ type ChatCardConfig = {
   chatSessionId?: string; // 当前关联的聊天会话ID
 };
 
-export type { PlatformConfig, Models, EvalSession, ChatCardConfig, ChatSession, ChatMessage, UsageStats };
+export type {
+  PlatformConfig,
+  Models,
+  EvalSession,
+  ChatCardConfig,
+  ChatSession,
+  ChatMessage,
+  UsageStats,
+};

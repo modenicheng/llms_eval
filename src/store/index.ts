@@ -1,5 +1,5 @@
 import localforage from "localforage";
-import type { PlatformConfig, EvalSession, ChatCardConfig, ChatSession } from "../types";
+import type { PlatformConfig, EvalSession, ChatSession } from "../types";
 
 const configStore = localforage.createInstance({
   driver: localforage.INDEXEDDB,

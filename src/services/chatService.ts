@@ -48,6 +48,7 @@ export interface StreamChunk {
     delta: {
       role?: string;
       content?: string;
+      reasoning_content?: string; // 推理内容
     };
     finish_reason: string | null;
   }>;
@@ -135,6 +136,7 @@ class ChatService {
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = "";
     let fullContent = "";
 
     try {
@@ -145,12 +147,21 @@ class ChatService {
           break;
         }
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
+        // 解码当前chunk并添加到缓冲区
+        buffer += decoder.decode(value, { stream: true });
+        
+        // 按行分割缓冲区
+        const lines = buffer.split("\n");
+        
+        // 保留最后一行（可能不完整）
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
+          const trimmedLine = line.trim();
+          if (!trimmedLine) continue;
+
+          if (trimmedLine.startsWith("data: ")) {
+            const data = trimmedLine.slice(6);
 
             if (data === "[DONE]") {
               return fullContent;
@@ -166,6 +177,27 @@ class ChatService {
               }
             } catch (error) {
               // 忽略解析错误，继续处理其他数据
+              console.warn("Failed to parse stream data:", error, "Data:", data);
+            }
+          }
+        }
+      }
+
+      // 处理缓冲区中剩余的数据
+      if (buffer.trim()) {
+        const trimmedLine = buffer.trim();
+        if (trimmedLine.startsWith("data: ")) {
+          const data = trimmedLine.slice(6);
+          if (data !== "[DONE]") {
+            try {
+              const parsed: StreamChunk = JSON.parse(data);
+              const content = parsed.choices[0]?.delta?.content;
+              if (content) {
+                fullContent += content;
+                onChunk(content);
+              }
+            } catch (error) {
+              console.warn("Failed to parse final buffer data:", error);
             }
           }
         }

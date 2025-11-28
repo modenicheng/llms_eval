@@ -256,7 +256,6 @@ onMounted(() => {
             class="mb-4"
             density="compact"
             clearable
-            
           ></v-text-field>
 
           <!-- Base URL -->
