@@ -602,7 +602,7 @@ onUnmounted(() => {
 
     <!-- 删除确认对话框 -->
     <v-dialog v-model="deleteDialog" max-width="500">
-      <template v-slot:default="{ isActive }">
+      <template v-slot:default="{}">
         <v-card title="确认删除" prepend-icon="mdi-alert-circle">
           <v-card-text>
             确定要删除这个评测会话吗？此操作不可恢复，所有相关的聊天记录也将被删除。
@@ -621,7 +621,7 @@ onUnmounted(() => {
 
     <!-- 重命名对话框 -->
     <v-dialog v-model="renameDialog" max-width="500">
-      <template v-slot:default="{ isActive }">
+      <template v-slot:default="{}">
         <v-card title="重命名评测会话" prepend-icon="mdi-pencil">
           <v-card-text>
             <v-text-field
