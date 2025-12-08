@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, watch, nextTick } from "vue";
 import { platformConfigStore, chatSessionStore } from "../store";
 import { chatService } from "../services/chatService";
-import type { PlatformConfig, ChatSession, ChatMessage } from "../types";
+import type { PlatformConfig, ChatSession, ChatMessage, Models } from "../types";
 import MarkdownIt from "markdown-it";
 
 // 展开的推理消息ID
@@ -54,6 +54,7 @@ const state = ref({
   platformConfigs: {} as Record<string, PlatformConfig>,
   selectedPlatform: "",
   selectedModel: "",
+  selectModelName: "",
   currentChatSession: null as ChatSession | null,
   isLoading: false,
 });
@@ -87,6 +88,9 @@ const loadPlatformConfigs = async (autoSelectDefault = true) => {
           handleModelSelect();
         }
       }
+    } else {
+      // 即使不自动选择默认值，如果已有选中的模型，也更新模型名称
+      updateSelectedModelName();
     }
   } catch (error) {
     console.error("Failed to load platform configs:", error);
@@ -105,6 +109,7 @@ const loadChatSession = async () => {
       if (session.modelConfig.platform && session.modelConfig.model) {
         state.value.selectedPlatform = session.modelConfig.platform;
         state.value.selectedModel = session.modelConfig.model;
+        updateSelectedModelName();
       }
     }
   } catch (error) {
@@ -118,6 +123,7 @@ const handleModelSelect = () => {
     emit("modelSelected", selectedPlatform, selectedModel);
     props.onModelSelect(selectedPlatform, selectedModel);
     updateChatSessionConfig();
+    updateSelectedModelName();
   }
 };
 
@@ -271,6 +277,17 @@ const isReasoningExpanded = (messageId: string) => {
 };
 
 // 选择模型的方法
+const updateSelectedModelName = () => {
+  const { selectedPlatform, selectedModel, platformConfigs } = state.value;
+  if (selectedPlatform && selectedModel && platformConfigs[selectedPlatform]) {
+    const modelObj = platformConfigs[selectedPlatform].models?.find(
+      (m) => m.value === selectedModel
+    );
+    state.value.selectModelName = modelObj?.label || "";
+  } else {
+    state.value.selectModelName = "";
+  }
+};
 const selectModel = (platform: string, model: string) => {
   state.value.selectedPlatform = platform;
   state.value.selectedModel = model;
@@ -292,6 +309,24 @@ const scrollToBottom = () => {
       chatMessagesRef.value.scrollTop = chatMessagesRef.value.scrollHeight;
     }
   });
+};
+
+// 获取模型提示信息
+const getModelTooltip = (model: Models) => {
+  const parts: string[] = [];
+  if (model.description) {
+    parts.push(`描述: ${model.description}`);
+  }
+  if (model.version) {
+    parts.push(`版本: ${model.version}`);
+  }
+  if (model.apiPath && model.apiPath !== '/chat/completions') {
+    parts.push(`API路径: ${model.apiPath}`);
+  }
+  if (model.custom) {
+    parts.push('自定义模型');
+  }
+  return parts.join('\n');
 };
 
 // 监听器
@@ -328,6 +363,23 @@ watch(
   { deep: true }
 );
 
+// 监听平台配置变化，更新模型名称
+watch(
+  () => state.value.platformConfigs,
+  () => {
+    updateSelectedModelName();
+  },
+  { deep: true }
+);
+
+// 监听模型选择相关状态变化，确保模型名称同步
+watch(
+  () => [state.value.selectedPlatform, state.value.selectedModel],
+  () => {
+    updateSelectedModelName();
+  }
+);
+
 // 组件挂载
 onMounted(async () => {
   // 先加载平台配置，但不自动选择默认值
@@ -343,7 +395,7 @@ onMounted(async () => {
     <!-- 卡片头部 -->
     <v-card-title class="d-flex justify-space-between align-center">
       <v-btn color="primary" variant="outlined" size="small">
-        {{ state.selectedModel || "选择模型" }}
+        {{ state.selectModelName || "选择模型" }}
         <v-menu activator="parent">
           <v-list>
             <v-list-item
@@ -372,7 +424,37 @@ onMounted(async () => {
                     :active="state.selectedModel === model.value"
                     @click="selectModel(platform, model.value)"
                   >
-                    <v-list-item-title>{{ model.label }}</v-list-item-title>
+                    <v-list-item-title class="d-flex align-center">
+                      <span>{{ model.label }}</span>
+                      <v-tooltip
+                        v-if="model.custom"
+                        location="right"
+                        :text="getModelTooltip(model)"
+                      >
+                        <template v-slot:activator="{ props }">
+                          <v-icon
+                            icon="mdi-account-cog"
+                            size="x-small"
+                            class="ml-1 text-secondary"
+                            v-bind="props"
+                          ></v-icon>
+                        </template>
+                      </v-tooltip>
+                      <v-tooltip
+                        v-if="model.tags && model.tags.length > 0"
+                        location="right"
+                        :text="model.tags.join(', ')"
+                      >
+                        <template v-slot:activator="{ props }">
+                          <v-icon
+                            icon="mdi-tag"
+                            size="x-small"
+                            class="ml-1 text-primary"
+                            v-bind="props"
+                          ></v-icon>
+                        </template>
+                      </v-tooltip>
+                    </v-list-item-title>
                   </v-list-item>
                 </v-list>
               </v-menu>

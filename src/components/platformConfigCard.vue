@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from "vue";
+import { ref, computed, onMounted, watch } from "vue";
 import { platformConfigStore } from "../store";
+import type { Models } from "../types";
 
 const MODEL_TYPES = {
   deepseek: {
@@ -34,13 +35,13 @@ const MODEL_TYPES = {
       // { value: "qwen3", label: "通义千问 3" },
       { value: "qwen3-12b", label: "通义千问 3 12B" },
       { value: "qwen3-72b", label: "通义千问 3 72B" },
-      { value: "qwen3-plus", label: "通义千问 3 Plus" },
+      // { value: "qwen3-plus", label: "通义千问 3 Plus" },
       { value: "qwen3-max", label: "通义千问 3 Max" },
-      { value: "qwen3-turbo", label: "通义千问 3 Turbo" },
+      // { value: "qwen3-turbo", label: "通义千问 3 Turbo" },
       // { value: "qwen3-code", label: "通义千问 3 代码" },
       // { value: "qwen3-math", label: "通义千问 3 数学" },
       // { value: "qwen3-reasoning", label: "通义千问 3 推理" },
-      { value: "qwen3-longcontext", label: "通义千问 3 长上下文" },
+      // { value: "qwen3-longcontext", label: "通义千问 3 长上下文" },
 
       // Qwen3 多模态模型
       // { value: "qwen3-vl", label: "通义千问 3 视觉" },
@@ -152,10 +153,26 @@ const props = defineProps({
 const config = ref({
   apiKey: "",
   baseURL: "",
+  platformName: "",
+  description: "",
 });
 
 const isSaving = ref(false);
 const saveStatus = ref("");
+
+// 自定义模型管理
+const customModels = ref<Models[]>([]);
+const editingModel = ref<Models | null>(null);
+const isEditingModel = ref(false);
+const modelForm = ref({
+  value: "",
+  label: "",
+  apiPath: "",
+  tags: [] as string[],
+  description: "",
+  version: "",
+});
+const tagInput = ref("");
 
 // Get platform configuration
 const platformConfig = ref(
@@ -166,6 +183,16 @@ const platformConfig = ref(
   }
 );
 
+// 预定义模型列表
+const predefinedModels = computed(() => {
+  return MODEL_TYPES[props.platform as keyof typeof MODEL_TYPES]?.models || [];
+});
+
+// 判断是否是自定义平台
+const isCustomPlatform = computed(() => {
+  return !(props.platform in MODEL_TYPES);
+});
+
 // Load configuration when component mounts or platform changes
 const loadConfig = async () => {
   try {
@@ -174,20 +201,40 @@ const loadConfig = async () => {
       config.value = {
         apiKey: savedConfig.apiKey || "",
         baseURL: savedConfig.baseURL || platformConfig.value.defaultUrl,
+        platformName: savedConfig.platformName || "",
+        description: savedConfig.description || "",
       };
+
+      // 分离预定义模型和自定义模型
+      const loadedModels = savedConfig.models || [];
+      customModels.value = loadedModels.filter(model => model.custom === true);
+
+      // 合并预定义模型和自定义模型，自定义模型在后面
+      platformConfig.value.models = [
+        ...(predefinedModels.value || []),
+        ...customModels.value
+      ];
     } else {
       // Set default values
       config.value = {
         apiKey: "",
         baseURL: platformConfig.value.defaultUrl,
+        platformName: "",
+        description: "",
       };
+      customModels.value = [];
+      platformConfig.value.models = [...(predefinedModels.value || [])];
     }
   } catch (error) {
     console.error("Failed to load config:", error);
     config.value = {
       apiKey: "",
       baseURL: platformConfig.value.defaultUrl,
+      platformName: "",
+      description: "",
     };
+    customModels.value = [];
+    platformConfig.value.models = [...(predefinedModels.value || [])];
   }
 };
 
@@ -197,14 +244,36 @@ const saveConfig = async () => {
   saveStatus.value = "保存中...";
 
   try {
+    // 清理预定义模型，确保没有custom字段
+    const cleanedPredefinedModels = (predefinedModels.value || []).map(model => ({
+      value: model.value,
+      label: model.label
+    }));
+
+    // 合并预定义模型和自定义模型
+    const allModels = [
+      ...cleanedPredefinedModels,
+      ...customModels.value
+    ];
+
+    // 判断是否是自定义平台
+    const isPredefined = props.platform in MODEL_TYPES;
+    const platformName = isPredefined ? MODEL_TYPES[props.platform as keyof typeof MODEL_TYPES].name : config.value.platformName;
+    const description = config.value.description;
+
     const success = await platformConfigStore.saveConfig(props.platform, {
       apiKey: config.value.apiKey,
       baseURL: config.value.baseURL,
-      models: platformConfig.value.models,
+      models: allModels,
+      custom: !isPredefined,
+      platformName,
+      description,
     });
 
     if (success) {
       saveStatus.value = "保存成功！";
+      // 更新显示模型列表
+      platformConfig.value.models = allModels;
     } else {
       saveStatus.value = "保存失败，请重试";
     }
@@ -218,6 +287,108 @@ const saveConfig = async () => {
     }, 3000);
   }
 };
+
+// 自定义模型管理函数
+const addTag = () => {
+  if (tagInput.value.trim() && !modelForm.value.tags.includes(tagInput.value.trim())) {
+    modelForm.value.tags.push(tagInput.value.trim());
+    tagInput.value = "";
+  }
+};
+
+const removeTag = (tag: string) => {
+  modelForm.value.tags = modelForm.value.tags.filter(t => t !== tag);
+};
+
+const openAddModelDialog = () => {
+  editingModel.value = null;
+  isEditingModel.value = true;
+  modelForm.value = {
+    value: "",
+    label: "",
+    apiPath: "",
+    tags: [],
+    description: "",
+    version: "",
+  };
+};
+
+const openEditModelDialog = (model: Models) => {
+  editingModel.value = model;
+  isEditingModel.value = true;
+  modelForm.value = {
+    value: model.value,
+    label: model.label,
+    apiPath: model.apiPath || "",
+    tags: model.tags || [],
+    description: model.description || "",
+    version: model.version || "",
+  };
+};
+
+const saveModel = () => {
+  if (!modelForm.value.value.trim() || !modelForm.value.label.trim()) {
+    alert("模型ID和显示名称为必填项");
+    return;
+  }
+
+  // 检查模型ID是否已存在
+  const existingModel = customModels.value.find(
+    model => model.value === modelForm.value.value && model !== editingModel.value
+  );
+  if (existingModel) {
+    alert("模型ID已存在，请使用不同的ID");
+    return;
+  }
+
+  const modelData: Models = {
+    value: modelForm.value.value.trim(),
+    label: modelForm.value.label.trim(),
+    apiPath: modelForm.value.apiPath.trim() || undefined,
+    tags: modelForm.value.tags.length > 0 ? modelForm.value.tags : undefined,
+    description: modelForm.value.description.trim() || undefined,
+    version: modelForm.value.version.trim() || undefined,
+    custom: true,
+  };
+
+  if (editingModel.value) {
+    // 更新现有模型
+    const index = customModels.value.findIndex(m => m === editingModel.value);
+    if (index !== -1) {
+      customModels.value[index] = modelData;
+    }
+  } else {
+    // 添加新模型
+    customModels.value.push(modelData);
+  }
+
+  closeModelDialog();
+  // 自动保存配置
+  saveConfig();
+};
+
+const deleteModel = (model: Models) => {
+  if (confirm(`确定要删除自定义模型 "${model.label}" 吗？`)) {
+    customModels.value = customModels.value.filter(m => m !== model);
+    // 自动保存配置
+    saveConfig();
+  }
+};
+
+const closeModelDialog = () => {
+  isEditingModel.value = false;
+  editingModel.value = null;
+  modelForm.value = {
+    value: "",
+    label: "",
+    apiPath: "",
+    tags: [],
+    description: "",
+    version: "",
+  };
+  tagInput.value = "";
+};
+
 
 // Watch for platform changes
 watch(
@@ -242,7 +413,7 @@ onMounted(() => {
 <template>
   <v-container>
     <v-card>
-      <v-card-title>{{ platformConfig.name }}</v-card-title>
+      <v-card-title>{{ isCustomPlatform ? config.platformName || props.platform : platformConfig.name }}</v-card-title>
       <v-card-text>
         <v-form @submit.prevent="saveConfig">
           <!-- API Key -->
@@ -256,6 +427,7 @@ onMounted(() => {
             class="mb-4"
             density="compact"
             clearable
+              hide-details="auto"
           ></v-text-field>
 
           <!-- Base URL -->
@@ -267,22 +439,99 @@ onMounted(() => {
             variant="outlined"
             density="compact"
             class="mb-4"
+              hide-details="auto"
           ></v-text-field>
+
+          <!-- 自定义平台字段 -->
+          <template v-if="isCustomPlatform">
+            <!-- 平台名称 -->
+            <v-text-field
+              v-model="config.platformName"
+              label="平台名称"
+              placeholder="请输入平台显示名称"
+              :disabled="isSaving"
+              variant="outlined"
+              hide-details="auto"
+              density="compact"
+              class="mb-4"
+              required
+            ></v-text-field>
+
+            <!-- 平台描述 -->
+            <v-textarea
+              v-model="config.description"
+              label="平台描述"
+              :disabled="isSaving"
+              variant="outlined"
+              density="compact"
+              rows="2"
+              class="mb-4"
+              hide-details="auto"
+            ></v-textarea>
+          </template>
 
           <!-- Available Models -->
           <v-card variant="outlined" class="mb-4">
-            <v-card-title class="text-subtitle-1">可用模型</v-card-title>
-            <v-card-text>
-              <v-chip
-                v-for="model in platformConfig.models"
-                :key="model.value"
-                class="ma-1"
-                color="primary"
+            <v-card-title class="text-subtitle-1 d-flex justify-space-between align-center">
+              <span>可用模型</span>
+              <v-btn
+                size="small"
                 variant="outlined"
-                density="compact"
+                color="primary"
+                @click="openAddModelDialog"
               >
-                {{ model.label }}
-              </v-chip>
+                <v-icon icon="mdi-plus" size="small"></v-icon>
+                添加自定义模型
+              </v-btn>
+            </v-card-title>
+            <v-card-text style="max-height: 10rem; overflow-y: auto;">
+              <!-- 预定义模型 -->
+              <div v-if="predefinedModels.length > 0" class="mb-4">
+                <div class="text-caption text-medium-emphasis mb-2">预定义模型</div>
+                <v-chip
+                  v-for="model in predefinedModels"
+                  :key="model.value"
+                  class="ma-1"
+                  color="primary"
+                  variant="outlined"
+                  density="compact"
+                >
+                  {{ model.label }}
+                </v-chip>
+              </div>
+
+              <!-- 自定义模型 -->
+              <div v-if="customModels.length > 0" class="mt-4">
+                <div class="text-caption text-medium-emphasis mb-2">自定义模型</div>
+                <v-chip
+                  v-for="model in customModels"
+                  :key="model.value"
+                  class="ma-1"
+                  color="secondary"
+                  variant="outlined"
+                  density="compact"
+                >
+                  {{ model.label }}
+                  <template #append>
+                    <v-icon
+                      icon="mdi-pencil"
+                      size="x-small"
+                      class="ml-1"
+                      @click.stop="openEditModelDialog(model)"
+                    ></v-icon>
+                    <v-icon
+                      icon="mdi-delete"
+                      size="x-small"
+                      class="ml-1"
+                      @click.stop="deleteModel(model)"
+                    ></v-icon>
+                  </template>
+                </v-chip>
+              </div>
+
+              <div v-if="predefinedModels.length === 0 && customModels.length === 0" class="text-caption text-medium-emphasis">
+                暂无可用模型
+              </div>
             </v-card-text>
           </v-card>
 
@@ -309,5 +558,119 @@ onMounted(() => {
         </v-form>
       </v-card-text>
     </v-card>
+
+    <!-- 自定义模型编辑对话框 -->
+    <v-dialog v-model="isEditingModel" max-width="600">
+      <v-card>
+        <v-card-title>
+          {{ editingModel ? '编辑自定义模型' : '添加自定义模型' }}
+        </v-card-title>
+        <v-card-text>
+          <v-form @submit.prevent="saveModel">
+            <!-- 模型ID -->
+            <v-text-field
+              v-model="modelForm.value"
+              label="模型ID"
+              placeholder="如: my-custom-model"
+              required
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+            ></v-text-field>
+
+            <!-- 显示名称 -->
+            <v-text-field
+              v-model="modelForm.label"
+              label="显示名称"
+              placeholder="如: 我的自定义模型"
+              required
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+            ></v-text-field>
+
+            <!-- API路径 -->
+            <v-text-field
+              v-model="modelForm.apiPath"
+              label="API路径 (可选)"
+              placeholder="如: /v1/chat/completions (默认为/chat/completions)"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+            ></v-text-field>
+
+            <!-- 版本 -->
+            <v-text-field
+              v-model="modelForm.version"
+              label="版本号 (可选)"
+              placeholder="如: 1.0.0"
+              variant="outlined"
+              density="compact"
+              class="mb-3"
+            ></v-text-field>
+
+            <!-- 标签 -->
+            <v-card variant="outlined" class="mb-3">
+              <v-card-title class="text-subtitle-1">标签 (可选)</v-card-title>
+              <v-card-text>
+                <div class="d-flex align-center mb-2">
+                  <v-text-field
+                    v-model="tagInput"
+                    label="添加标签"
+                    placeholder="输入标签后按回车"
+                    variant="outlined"
+                    density="compact"
+                    hide-details="auto"
+                    @keydown.enter.prevent="addTag"
+                    class="mr-2"
+                  ></v-text-field>
+                  <v-btn @click="addTag" :disabled="!tagInput" variant="tonal">添加</v-btn>
+                </div>
+                <div v-if="modelForm.tags.length > 0" class="mt-2">
+                  <v-chip
+                    v-for="tag in modelForm.tags"
+                    :key="tag"
+                    class="ma-1"
+                    closable
+                    @click:close="removeTag(tag)"
+                    variant="outlined"
+                    density="compact"
+                  >
+                    {{ tag }}
+                  </v-chip>
+                </div>
+              </v-card-text>
+            </v-card>
+
+            <!-- 描述 -->
+            <v-textarea
+              v-model="modelForm.description"
+              label="描述 (可选)"
+              variant="outlined"
+              density="compact"
+              rows="2"
+              class="mb-4"
+            ></v-textarea>
+
+            <!-- 操作按钮 -->
+            <div class="d-flex justify-end">
+              <v-btn
+                variant="text"
+                class="mr-2"
+                @click="closeModelDialog"
+              >
+                取消
+              </v-btn>
+              <v-btn
+                type="submit"
+                color="primary"
+              >
+                保存
+              </v-btn>
+            </div>
+          </v-form>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
   </v-container>
 </template>

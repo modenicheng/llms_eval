@@ -62,12 +62,15 @@ class ChatService {
     messages: ChatMessage[],
     onStreamChunk?: (content: string, reasoningContent?: string) => void
   ): Promise<string> {
+    // 查找模型配置以获取自定义API路径
+    const modelConfig = platformConfig.models.find(m => m.value === model);
+    const apiPath = modelConfig?.apiPath || "/chat/completions";
+
     const requestData: ChatCompletionRequest = {
       model,
       messages,
       temperature: 0.7,
       top_p: 0.9,
-      max_tokens: 2048,
       stream: !!onStreamChunk,
       frequency_penalty: 0,
       presence_penalty: 0,
@@ -79,11 +82,12 @@ class ChatService {
         return await this.sendStreamRequest(
           platformConfig,
           requestData,
-          onStreamChunk
+          onStreamChunk,
+          apiPath
         );
       } else {
         // 普通请求
-        return await this.sendNormalRequest(platformConfig, requestData);
+        return await this.sendNormalRequest(platformConfig, requestData, apiPath);
       }
     } catch (error) {
       console.error("Chat request failed:", error);
@@ -97,10 +101,11 @@ class ChatService {
 
   private async sendNormalRequest(
     platformConfig: PlatformConfig,
-    requestData: ChatCompletionRequest
+    requestData: ChatCompletionRequest,
+    apiPath: string = "/chat/completions"
   ): Promise<string> {
     const response = await axios.post<ChatCompletionResponse>(
-      `${platformConfig.baseURL}/chat/completions`,
+      `${platformConfig.baseURL}${apiPath.startsWith('/') ? '' : '/'}${apiPath}`,
       requestData,
       {
         headers: {
@@ -116,9 +121,10 @@ class ChatService {
   private async sendStreamRequest(
     platformConfig: PlatformConfig,
     requestData: ChatCompletionRequest,
-    onChunk: (content: string, reasoningContent?: string) => void
+    onChunk: (content: string, reasoningContent?: string) => void,
+    apiPath: string = "/chat/completions"
   ): Promise<string> {
-    const response = await fetch(`${platformConfig.baseURL}/chat/completions`, {
+    const response = await fetch(`${platformConfig.baseURL}${apiPath.startsWith('/') ? '' : '/'}${apiPath}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -1,10 +1,17 @@
 import localforage from "localforage";
-import type { PlatformConfig, EvalSession, ChatSession } from "../types";
+import type { PlatformConfig, PlatformMeta, EvalSession, ChatSession } from "../types";
 
 const configStore = localforage.createInstance({
   driver: localforage.INDEXEDDB,
   name: "llms_eval",
   storeName: "config",
+});
+
+// 存储平台元数据（预定义平台信息）
+const platformMetaStorage = localforage.createInstance({
+  driver: localforage.INDEXEDDB,
+  name: "llms_eval",
+  storeName: "platform_meta",
 });
 
 // 这个存储模块是用来存储评测会话的
@@ -177,6 +184,9 @@ export const platformConfigStore = {
         apiKey: config.apiKey,
         baseURL: config.baseURL,
         models: config.models ? JSON.parse(JSON.stringify(config.models)) : [],
+        custom: config.custom || false,
+        platformName: config.platformName || "",
+        description: config.description || "",
       };
       await configStore.setItem(platform, serializedConfig);
       return true;
@@ -197,6 +207,9 @@ export const platformConfigStore = {
           apiKey: (config as any).apiKey || "",
           baseURL: (config as any).baseURL || "",
           models: (config as any).models || [],
+          custom: (config as any).custom || false,
+          platformName: (config as any).platformName || "",
+          description: (config as any).description || "",
         };
         return deserializedConfig as PlatformConfig;
       }
@@ -221,6 +234,9 @@ export const platformConfigStore = {
             apiKey: (config as any).apiKey || "",
             baseURL: (config as any).baseURL || "",
             models: (config as any).models || [],
+            custom: (config as any).custom || false,
+            platformName: (config as any).platformName || "",
+            description: (config as any).description || "",
           } as PlatformConfig;
         }
       }
@@ -239,6 +255,75 @@ export const platformConfigStore = {
       return true;
     } catch (error) {
       console.error(`Failed to delete config for ${platform}:`, error);
+      return false;
+    }
+  },
+};
+
+// Platform metadata store methods (用于管理预定义平台信息)
+export const platformMetaStore = {
+  // 初始化预定义平台元数据
+  async initPredefinedPlatforms(predefinedPlatforms: PlatformMeta[]) {
+    try {
+      for (const platform of predefinedPlatforms) {
+        await platformMetaStorage.setItem(platform.id, platform);
+      }
+      return true;
+    } catch (error) {
+      console.error("Failed to init predefined platforms:", error);
+      return false;
+    }
+  },
+
+  // 保存平台元数据
+  async savePlatformMeta(platformMeta: PlatformMeta): Promise<boolean> {
+    try {
+      await platformMetaStorage.setItem(platformMeta.id, platformMeta);
+      return true;
+    } catch (error) {
+      console.error(`Failed to save platform meta for ${platformMeta.id}:`, error);
+      return false;
+    }
+  },
+
+  // 获取平台元数据
+  async getPlatformMeta(platformId: string): Promise<PlatformMeta | null> {
+    try {
+      const meta = await platformMetaStorage.getItem(platformId);
+      return meta as PlatformMeta | null;
+    } catch (error) {
+      console.error(`Failed to get platform meta for ${platformId}:`, error);
+      return null;
+    }
+  },
+
+  // 获取所有平台元数据
+  async getAllPlatformMetas(): Promise<PlatformMeta[]> {
+    try {
+      const keys = await platformMetaStorage.keys();
+      const metas: PlatformMeta[] = [];
+
+      for (const key of keys) {
+        const meta = await platformMetaStorage.getItem(key);
+        if (meta) {
+          metas.push(meta as PlatformMeta);
+        }
+      }
+
+      return metas;
+    } catch (error) {
+      console.error("Failed to load all platform metas:", error);
+      return [];
+    }
+  },
+
+  // 删除平台元数据
+  async deletePlatformMeta(platformId: string): Promise<boolean> {
+    try {
+      await platformMetaStorage.removeItem(platformId);
+      return true;
+    } catch (error) {
+      console.error(`Failed to delete platform meta for ${platformId}:`, error);
       return false;
     }
   },

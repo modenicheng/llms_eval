@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import ChatCard from "../components/chatCard.vue";
 import { evalSessionStore, chatSessionStore } from "../store";
 
@@ -8,6 +8,7 @@ import type { EvalSession, ChatCardConfig } from "../types";
 
 // 路由
 const route = useRoute();
+const router = useRouter();
 
 // 当前评测会话
 const currentSession = ref<EvalSession | null>(null);
@@ -22,19 +23,18 @@ const chatCards = ref<
 // 统一输入框内容
 const globalPrompt = ref("");
 
-// 创建新的评测会话
-const createNewSession = async () => {
+// 创建新的评测会话，返回会话ID
+const createNewSession = async (): Promise<string> => {
   try {
     const sessionId = await evalSessionStore.createSession({
       name: `评测会话 ${new Date().toLocaleString()}`,
       chatCards: [],
       chatSessionIds: [],
     });
-
-    // 加载新创建的会话
-    await loadSession(sessionId);
+    return sessionId;
   } catch (error) {
     console.error("Failed to create session:", error);
+    throw error;
   }
 };
 
@@ -53,49 +53,124 @@ const loadSession = async (sessionId: string) => {
   }
 };
 
-// 添加新的聊天卡片
-const addChatCard = async () => {
+// 保存会话到存储
+const saveSession = async () => {
   if (!currentSession.value) return;
 
-  const newCardId = Date.now().toString();
-  const newCardConfig: ChatCardConfig = {
-    id: newCardId,
-    platform: "",
-    model: "",
-  };
+  try {
+    await evalSessionStore.updateSession(currentSession.value.id, {
+      name: currentSession.value.name,
+      chatCards: currentSession.value.chatCards,
+      chatSessionIds: currentSession.value.chatSessionIds,
+    });
+  } catch (error) {
+    console.error("Failed to save session:", error);
+  }
+};
 
-  // 创建对应的聊天会话
-  const chatSessionId = await chatSessionStore.createSession({
-    evalSessionId: currentSession.value.id,
-    chatCardId: newCardId,
-    messages: [],
-    usage: {
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-    },
-    modelConfig: {
+// 添加新的聊天卡片
+const addChatCard = async () => {
+  let sessionId: string;
+
+  if (!currentSession.value) {
+    // 如果没有当前会话，先创建新会话
+    try {
+      sessionId = await createNewSession();
+
+      const newCardId = Date.now().toString();
+      const newCardConfig: ChatCardConfig = {
+        id: newCardId,
+        platform: "",
+        model: "",
+      };
+
+      // 创建对应的聊天会话
+      const chatSessionId = await chatSessionStore.createSession({
+        evalSessionId: sessionId,
+        chatCardId: newCardId,
+        messages: [],
+        usage: {
+          promptTokens: 0,
+          completionTokens: 0,
+          totalTokens: 0,
+        },
+        modelConfig: {
+          platform: "",
+          model: "",
+        },
+      });
+
+      // 更新卡片配置
+      newCardConfig.chatSessionId = chatSessionId;
+
+      // 创建初始会话数据
+      const newSession: EvalSession = {
+        id: sessionId,
+        name: `评测会话 ${new Date().toLocaleString()}`,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        chatCards: [newCardConfig],
+        chatSessionIds: [chatSessionId],
+      };
+
+      // 保存新会话到store
+      await evalSessionStore.updateSession(sessionId, {
+        name: newSession.name,
+        chatCards: newSession.chatCards,
+        chatSessionIds: newSession.chatSessionIds,
+      });
+
+      // 跳转到新会话的路由
+      router.push(`/chat/${sessionId}`);
+      return;
+    } catch (error) {
+      console.error("Failed to add chat card with new session:", error);
+      return;
+    }
+  } else {
+    // 有当前会话，继续原有逻辑
+    sessionId = currentSession.value.id;
+
+    const newCardId = Date.now().toString();
+    const newCardConfig: ChatCardConfig = {
+      id: newCardId,
       platform: "",
       model: "",
-    },
-  });
+    };
 
-  // 更新卡片配置
-  newCardConfig.chatSessionId = chatSessionId;
+    // 创建对应的聊天会话
+    const chatSessionId = await chatSessionStore.createSession({
+      evalSessionId: sessionId,
+      chatCardId: newCardId,
+      messages: [],
+      usage: {
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+      },
+      modelConfig: {
+        platform: "",
+        model: "",
+      },
+    });
 
-  // 添加到当前会话
-  currentSession.value.chatCards.push(newCardConfig);
-  currentSession.value.chatSessionIds.push(chatSessionId);
+    // 更新卡片配置
+    newCardConfig.chatSessionId = chatSessionId;
 
-  // 添加到本地状态
-  chatCards.value.push({
-    id: newCardId,
-    config: newCardConfig,
-    userPrompt: "",
-  });
+    // 添加到当前会话
+    currentSession.value.chatCards.push(newCardConfig);
+    currentSession.value.chatSessionIds.push(chatSessionId);
 
-  // 保存会话
-  saveSession();
+    // 添加到本地状态
+    chatCards.value.push({
+      id: newCardId,
+      config: newCardConfig,
+      userPrompt: "",
+    });
+
+    // 保存会话
+    saveSession();
+  }
 };
 
 // 删除聊天卡片
@@ -159,20 +234,6 @@ const updateChatCardConfig = async (
   saveSession();
 };
 
-// 保存会话到存储
-const saveSession = async () => {
-  if (!currentSession.value) return;
-
-  try {
-    await evalSessionStore.updateSession(currentSession.value.id, {
-      name: currentSession.value.name,
-      chatCards: currentSession.value.chatCards,
-      chatSessionIds: currentSession.value.chatSessionIds,
-    });
-  } catch (error) {
-    console.error("Failed to save session:", error);
-  }
-};
 
 // 发送统一prompt给所有卡片
 const sendGlobalPrompt = () => {
@@ -205,16 +266,27 @@ const handleModelSelect = (platform: string, model: string) => {
   console.log(`选择了服务商: ${platform}, 模型: ${model}`);
 };
 
-// 组件挂载时根据路由参数加载会话
-onMounted(async () => {
+// 根据路由参数加载或清空会话
+const handleRouteChange = async () => {
   const sessionId = route.params.sessionId as string;
   if (sessionId) {
     // 如果路由中有sessionId参数，则加载该会话
     await loadSession(sessionId);
   } else {
-    // 否则创建新会话
-    await createNewSession();
+    // 否则清空当前会话，显示空白状态
+    currentSession.value = null;
+    chatCards.value = [];
   }
+};
+
+// 组件挂载时加载会话
+onMounted(async () => {
+  await handleRouteChange();
+});
+
+// 监听路由参数变化，重新加载会话
+watch(() => route.params.sessionId, async () => {
+  await handleRouteChange();
 });
 
 // 监听会话变化，自动保存
